@@ -1,131 +1,129 @@
-import sys
-import os
-import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
 import sqlite3
+import pandas as pd
+from datetime import date
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+DB_PATH = "db/gastos.db"
 
-from db.database import Database
-from core.calculator import ExpenseDivider
+def conectar_banco():
+    return sqlite3.connect(DB_PATH)
 
-def safe_db_operation(operation):
-    try:
-        return operation()
-    except sqlite3.Error as e:
-        st.error(f"Erro no banco de dados: {e}")
-        return None
-    except Exception as e:
-        st.error(f"Erro inesperado: {e}")
-        return None
-
-st.set_page_config(page_title="Divisor de Fatura", layout="wide")
-st.title("💳 Divisor de Fatura de Cartão de Crédito")
-
-# --- Instanciar banco
-db = Database()
-
-# --- Dados do banco
-compras = safe_db_operation(lambda: db.execute_dataframe("SELECT * FROM compras"))
-pessoas = safe_db_operation(lambda: db.execute_dataframe("SELECT * FROM pessoas"))
-cartoes = safe_db_operation(lambda: db.execute_dataframe("SELECT * FROM cartoes"))
-
-if compras is None:
-    compras = pd.DataFrame()
-if pessoas is None:
-    pessoas = pd.DataFrame(columns=["nome", "limite"])
-if cartoes is None:
-    cartoes = pd.DataFrame(columns=["nome"])
-
-# --- Filtro por mês
-st.sidebar.header("📅 Filtrar por mês")
-if not compras.empty:
-    compras['ano_mes'] = pd.to_datetime(compras['data']).dt.strftime('%Y-%m')
-    meses_disponiveis = compras['ano_mes'].unique().tolist()
-    mes_selecionado = st.sidebar.selectbox("Mês", sorted(meses_disponiveis, reverse=True))
-    compras_filtradas = compras[compras['ano_mes'] == mes_selecionado]
-else:
-    st.warning("Nenhuma compra encontrada no banco de dados.")
-    compras_filtradas = pd.DataFrame()
-
-# --- Mostrar compras filtradas
-if not compras_filtradas.empty:
-    st.subheader(f"📋 Compras em {mes_selecionado}")
-    st.dataframe(compras_filtradas.drop(columns=["ano_mes"]), use_container_width=True)
-else:
-    st.info("Nenhuma compra registrada para o mês selecionado.")
-
-# --- Botão para excluir compra
-st.subheader("🗑️ Excluir Compras")
-if not compras_filtradas.empty:
-    compras_filtradas["opcao"] = compras_filtradas.apply(
-        lambda row: f"{row['id']} - {row['descricao']} (R$ {row['valor']:.2f})", axis=1
-    )
-    selecao = st.selectbox("Selecione a compra para excluir", compras_filtradas["opcao"])
-    id_excluir = int(selecao.split(" - ")[0])
-
-    if st.button("❌ Confirmar Exclusão"):
-        db.execute_query("DELETE FROM compras WHERE id = ?", (id_excluir,))
-        st.success(f"Compra com ID {id_excluir} excluída com sucesso.")
-        st.rerun()
-else:
-    st.info("Nenhuma compra para excluir.")
-
-# --- Atualizar/adicionar limite de cada pessoa
-st.sidebar.header("💰 Limites de Gastos")
-limites = {}
-for _, row in pessoas.iterrows():
-    novo_limite = st.sidebar.number_input(
-        f"Limite de {row['nome']}", value=float(row["limite"]), step=50.0
-    )
-    limites[row["nome"]] = novo_limite
-    db.execute_query("UPDATE pessoas SET limite = ? WHERE nome = ?", (novo_limite, row["nome"]))
-
-# --- Divisão automática
-if not compras_filtradas.empty and st.sidebar.button("📊 Calcular Divisão"):
-    gastos = compras_filtradas.to_dict(orient="records")
-    try:
-        resultado = ExpenseDivider().calcular_divisao(gastos, limites)
-        st.subheader("📈 Divisão das Despesas")
-        st.table(
-            pd.DataFrame.from_dict(resultado, orient='index', columns=['Total a Pagar'])
-            .reset_index().rename(columns={"index": "Pessoa"})
+def criar_tabelas():
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS compras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            descricao TEXT NOT NULL,
+            valor REAL NOT NULL,
+            data TEXT NOT NULL,
+            responsavel TEXT NOT NULL,
+            cartao TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            parcelas INTEGER DEFAULT 1,
+            parcela_atual INTEGER DEFAULT 1
         )
-    except Exception as e:
-        st.error(f"Erro ao calcular divisão: {e}")
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS limites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pessoa TEXT UNIQUE,
+            limite REAL NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# --- Gráfico de gastos por pessoa
-if not compras_filtradas.empty:
-    st.subheader("📊 Gráfico de Gastos por Pessoa")
-    gastos_por_pessoa = compras_filtradas.groupby("responsavel")["valor"].sum()
-    fig, ax = plt.subplots()
-    gastos_por_pessoa.plot(kind='bar', ax=ax, color='skyblue')
-    ax.set_ylabel("Total Gasto (R$)")
-    ax.set_title("Gastos por Pessoa")
-    ax.grid(axis='y', linestyle='--', alpha=0.5)
-    st.pyplot(fig)
+def adicionar_compra(dados):
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO compras (descricao, valor, data, responsavel, cartao, categoria, parcelas, parcela_atual)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', dados)
+    conn.commit()
+    conn.close()
 
-# --- Adicionar nova compra
-st.sidebar.header("➕ Nova Compra")
-with st.sidebar.form("nova_compra"):
+def definir_limite(pessoa, limite):
+    conn = conectar_banco()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO limites (pessoa, limite) VALUES (?, ?)", (pessoa, limite))
+    conn.commit()
+    conn.close()
+
+def obter_limites():
+    conn = conectar_banco()
+    df = pd.read_sql_query("SELECT * FROM limites", conn)
+    conn.close()
+    return df
+
+def carregar_dados():
+    conn = conectar_banco()
+    df = pd.read_sql_query("SELECT * FROM compras ORDER BY data DESC", conn)
+    conn.close()
+    return df
+
+# ----------------------------
+# 🖥️ Interface Streamlit
+# ----------------------------
+
+st.set_page_config(page_title="Cartão Compartilhado", layout="centered")
+st.title("💳 Controle Compartilhado de Cartões")
+
+criar_tabelas()
+
+# Formulário para adicionar compra
+st.subheader("➕ Adicionar Nova Compra")
+with st.form("form_compra"):
     descricao = st.text_input("Descrição")
-    valor = st.number_input("Valor", step=10.0)
-    data = st.date_input("Data da compra")
-    responsavel = st.selectbox("Responsável", pessoas["nome"]) if not pessoas.empty else ""
-    cartao = st.selectbox("Cartão", cartoes["nome"]) if not cartoes.empty else ""
+    valor = st.number_input("Valor (R$)", min_value=0.01, step=0.01)
+    data = st.date_input("Data", value=date.today())
+    responsavel = st.selectbox("Responsável", ["Gustavo", "Esposa"])
+    cartao = st.selectbox("Cartão", ["Inter", "Itau", "Nubank"])
     categoria = st.text_input("Categoria", value="Outros")
     parcelas = st.number_input("Parcelas", min_value=1, max_value=12, value=1)
     parcela_atual = st.number_input("Parcela Atual", min_value=1, max_value=12, value=1)
     submitted = st.form_submit_button("Adicionar")
 
     if submitted:
-        db.execute_query("""
-            INSERT INTO compras (descricao, valor, data, responsavel, cartao, categoria, parcelas, parcela_atual)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            descricao, valor, data.strftime("%Y-%m-%d"),
-            responsavel, cartao, categoria, parcelas, parcela_atual
-        ))
-        st.success("Compra adicionada com sucesso!")
-        st.rerun()
+        adicionar_compra((descricao, valor, data.strftime("%Y-%m-%d"), responsavel, cartao, categoria, parcelas, parcela_atual))
+        st.success("✅ Compra adicionada com sucesso!")
+
+# Formulário para definir limites
+st.subheader("⚙️ Definir Limite de Gastos")
+with st.form("form_limite"):
+    pessoa = st.selectbox("Pessoa", ["Gustavo", "Esposa"])
+    limite = st.number_input("Limite de Gastos (R$)", min_value=0.0, step=10.0)
+    submitted2 = st.form_submit_button("Salvar Limite")
+
+    if submitted2:
+        definir_limite(pessoa, limite)
+        st.success(f"✅ Limite salvo para {pessoa}: R$ {limite:.2f}")
+
+# Mostrar compras e limites
+st.subheader("📋 Compras Registradas")
+df_compras = carregar_dados()
+st.dataframe(df_compras, use_container_width=True)
+
+st.subheader("📊 Limites Definidos")
+df_limites = obter_limites()
+st.dataframe(df_limites, use_container_width=True)
+
+# Novo bloco: resumo por pessoa
+st.subheader("📈 Resumo por Pessoa")
+
+if not df_compras.empty and not df_limites.empty:
+    resumo = df_compras.groupby("responsavel")["valor"].sum().reset_index(name="total_gasto")
+    resumo = resumo.merge(df_limites, left_on="responsavel", right_on="pessoa", how="left")
+    resumo["restante"] = resumo["limite"] - resumo["total_gasto"]
+
+    for _, row in resumo.iterrows():
+        st.markdown(f"### 👤 {row['pessoa']}")
+        st.markdown(f"- 💸 Total gasto: **R$ {row['total_gasto']:.2f}**")
+        st.markdown(f"- 💰 Limite definido: **R$ {row['limite']:.2f}**")
+        if row["restante"] >= 0:
+            st.success(f"✅ Ainda pode gastar: **R$ {row['restante']:.2f}**")
+        else:
+            st.error(f"❌ Excedeu o limite em: **R$ {-row['restante']:.2f}**")
+else:
+    st.info("Adicione compras e limites para visualizar o resumo.")
