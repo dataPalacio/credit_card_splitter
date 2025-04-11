@@ -2,9 +2,14 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import date
+import os
 
-DB_PATH = "db/gastos.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "..", "db", "gastos.db")
 
+# ----------------------------------------
+# 🔧 Funções de Banco de Dados
+# ----------------------------------------
 def conectar_banco():
     return sqlite3.connect(DB_PATH)
 
@@ -35,56 +40,67 @@ def criar_tabelas():
     conn.close()
 
 def adicionar_compra(dados):
-    conn = conectar_banco()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO compras (descricao, valor, data, responsavel, cartao, categoria, parcelas, parcela_atual)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', dados)
-    conn.commit()
-    conn.close()
+    try:
+        conn = conectar_banco()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO compras (descricao, valor, data, responsavel, cartao, categoria, parcelas, parcela_atual)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', dados)
+        conn.commit()
+    finally:
+        conn.close()
 
 def editar_compra(id_compra, novos_dados):
-    conn = conectar_banco()
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE compras
-        SET descricao = ?, valor = ?, data = ?, responsavel = ?, cartao = ?, categoria = ?, parcelas = ?, parcela_atual = ?
-        WHERE id = ?
-    ''', (*novos_dados, id_compra))
-    conn.commit()
-    conn.close()
-
-def definir_limite(pessoa, limite):
-    conn = conectar_banco()
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO limites (pessoa, limite) VALUES (?, ?)", (pessoa, limite))
-    conn.commit()
-    conn.close()
+    try:
+        conn = conectar_banco()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE compras
+            SET descricao = ?, valor = ?, data = ?, responsavel = ?, cartao = ?, categoria = ?, parcelas = ?, parcela_atual = ?
+            WHERE id = ?
+        ''', (*novos_dados, id_compra))
+        conn.commit()
+    finally:
+        conn.close()
 
 def excluir_compra(id_compra):
-    conn = conectar_banco()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM compras WHERE id = ?", (id_compra,))
-    conn.commit()
-    conn.close()
+    try:
+        conn = conectar_banco()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM compras WHERE id = ?", (id_compra,))
+        conn.commit()
+    finally:
+        conn.close()
+
+def definir_limite(pessoa, limite):
+    try:
+        conn = conectar_banco()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO limites (pessoa, limite) VALUES (?, ?)", (pessoa, limite))
+        conn.commit()
+    finally:
+        conn.close()
 
 def obter_limites():
-    conn = conectar_banco()
-    df = pd.read_sql_query("SELECT * FROM limites", conn)
-    conn.close()
-    return df
+    try:
+        conn = conectar_banco()
+        df = pd.read_sql_query("SELECT * FROM limites", conn)
+        return df
+    finally:
+        conn.close()
 
 def carregar_dados():
-    conn = conectar_banco()
-    df = pd.read_sql_query("SELECT * FROM compras ORDER BY data DESC", conn)
-    conn.close()
-    return df
+    try:
+        conn = conectar_banco()
+        df = pd.read_sql_query("SELECT * FROM compras ORDER BY data DESC", conn)
+        return df
+    finally:
+        conn.close()
 
-# ----------------------------
-# 🖥️ Interface Streamlit
-# ----------------------------
-
+# ----------------------------------------
+# 🖥️ Interface do Streamlit
+# ----------------------------------------
 st.set_page_config(page_title="Cartão Compartilhado", layout="centered")
 st.title("💳 Controle Compartilhado de Cartões")
 
@@ -104,8 +120,11 @@ with st.form("form_compra"):
     submitted = st.form_submit_button("Adicionar")
 
     if submitted:
-        adicionar_compra((descricao, valor, data.strftime("%Y-%m-%d"), responsavel, cartao, categoria, parcelas, parcela_atual))
-        st.success("✅ Compra adicionada com sucesso!")
+        if descricao and valor:
+            adicionar_compra((descricao, valor, data.strftime("%Y-%m-%d"), responsavel, cartao, categoria, parcelas, parcela_atual))
+            st.success("✅ Compra adicionada com sucesso!")
+        else:
+            st.warning("⚠️ Preencha todos os campos obrigatórios.")
 
 # ⚙️ Definir ou Editar Limite de Gastos
 st.subheader("⚙️ Definir ou Editar Limite de Gastos")
@@ -122,11 +141,11 @@ with st.form("form_limite"):
 
 # 📋 Compras Registradas com Filtro por Mês
 st.subheader("📋 Compras Registradas")
-
 df_compras = carregar_dados()
 
 if not df_compras.empty:
-    df_compras["data"] = pd.to_datetime(df_compras["data"])
+    df_compras["data"] = pd.to_datetime(df_compras["data"], errors='coerce')
+    df_compras.dropna(subset=["data"], inplace=True)
     df_compras["ano_mes"] = df_compras["data"].dt.strftime('%Y-%m')
     df_compras["parcelas"] = pd.to_numeric(df_compras["parcelas"], errors="coerce").fillna(1).astype(int)
     df_compras["parcela_atual"] = pd.to_numeric(df_compras["parcela_atual"], errors="coerce").fillna(1).astype(int)
@@ -137,7 +156,6 @@ if not df_compras.empty:
     df_filtrado = df_compras[df_compras["ano_mes"] == mes_selecionado]
     st.dataframe(df_filtrado.drop(columns=["ano_mes"]), use_container_width=True)
 
-    # --- Editar ou Excluir linha individual
     st.markdown("### ✏️ Editar/Excluir Compra")
     df_filtrado["opcao"] = df_filtrado.apply(
         lambda row: f"{row['id']} - {row['descricao']} (R$ {row['valor']:.2f})", axis=1
@@ -159,7 +177,6 @@ if not df_compras.empty:
         novas_parcelas = st.number_input("Parcelas", min_value=1, max_value=12, value=int(dados["parcelas"]), key="parc_edit")
     with col5:
         nova_parcela_atual = st.number_input("Parcela Atual", min_value=1, max_value=12, value=int(dados["parcela_atual"]), key="atual_edit")
-
     with col6:
         if st.button("💾 Salvar Alterações"):
             editar_compra(id_selecionado, (

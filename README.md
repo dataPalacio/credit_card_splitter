@@ -1,83 +1,63 @@
-# 💳 credit_card_splitter
+# 💸 Controle de Gastos Pessoais
 
-Sistema de controle e divisão de despesas de faturas de cartão de crédito compartilhadas, com interface em **Streamlit** e persistência em **SQLite**.
+Este é um aplicativo web desenvolvido com [Streamlit](https://streamlit.io/) para registrar, visualizar, editar e excluir seus próprios gastos de forma simples e intuitiva.
 
----
+## ✅ Funcionalidades
+- Registro de gastos com data, valor, categoria, cartão e parcelas
+- Definição de limite mensal
+- Filtro opcional por mês
+- Edição e exclusão de registros
+- Cálculo de total gasto e limite restante
 
-## 🚀 Como executar o projeto
+## 🚀 Como Executar Localmente
 
-### 1. 📦 Clone o repositório
-
+1. Clone este repositório:
 ```bash
-git clone https://github.com/seu-usuario/credit_card_splitter.git
-cd credit_card_splitter
+git clone https://github.com/seu-usuario/seu-repo.git
+cd seu-repo
 ```
 
-### 2. 🐍 Crie e ative um ambiente virtual (opcional, mas recomendado)
-
-```bash
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# Linux/macOS
-source .venv/bin/activate
-```
-
-### 3. 📥 Instale as dependências
-
+2. Instale as dependências:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. 🛠️ Inicialize o banco de dados (cria as tabelas vazias)
-
+3. Execute o app:
 ```bash
-python data/seed_db.py
+streamlit run app/app_pessoal.py
 ```
 
-> Isso criará o arquivo `data/database.db` com as tabelas `pessoas`, `cartoes` e `compras`.
+## ☁️ Como Fazer Deploy no Streamlit Cloud
 
-### 5. 💻 Execute a aplicação Streamlit
+1. Faça login em https://streamlit.io/cloud
+2. Clique em **"New app"**
+3. Conecte seu repositório GitHub
+4. Escolha o arquivo `app/app_pessoal.py`
+5. Clique em **Deploy**
 
-```bash
-streamlit run app/app.py
+Pronto! O app será hospedado com um link como:
+
+```
+https://<seu-usuario>-<repo>.streamlit.app
 ```
 
-O app abrirá automaticamente no navegador em:
-👉 [http://localhost:8501](http://localhost:8501)
+## 📁 Estrutura recomendada do projeto
+
+```
+meu-projeto/
+├── app/
+│   └── app_pessoal.py
+├── db/
+│   └── gastos.db  ← (pode ser ignorado no .gitignore se quiser um banco novo)
+├── requirements.txt
+└── README.md
+```
+
+## 📌 Observações
+
+- O banco de dados `gastos.db` é um arquivo local persistido no servidor do Streamlit Cloud.
+- Para múltiplos usuários ou acessos simultâneos, considere usar um banco remoto como PostgreSQL ou Firebase.
 
 ---
 
-## 📂 Estrutura de pastas
-
-```
-credit_card_splitter/
-├── app/            # Interface gráfica (Streamlit)
-│   └── app.py
-├── core/           # Lógica de divisão de despesas
-│   └── calculator.py
-├── db/             # Estrutura e conexão com banco SQLite
-│   ├── database.py
-│   └── models.py
-├── data/           # Script de inicialização do banco
-│   └── seed_db.py
-├── data/database.db # Arquivo do banco SQLite (gerado após inicialização)
-├── requirements.txt # Dependências do projeto
-└── README.md        # Documentação do projeto
-```
-
----
-
-## ✅ Tecnologias utilizadas
-
-- [Python 3.10+](https://www.python.org/)
-- [Streamlit](https://streamlit.io/)
-- [SQLite (via sqlite3)](https://www.sqlite.org/)
-- [Pandas](https://pandas.pydata.org/)
-- [Matplotlib](https://matplotlib.org/)
-
----
-
-## 📌 Autor
-
-Desenvolvido por [Gustavo](https://github.com/dataPalacio) com foco em boas práticas de engenharia de software, modularização e interface amigável para uso pessoal e compartilhado.
+Desenvolvido por ❤️ com Streamlit
