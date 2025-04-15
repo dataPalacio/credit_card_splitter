@@ -1,8 +1,5 @@
 streamlit
 pandas
-<<<<<<< HEAD
 matplotlib
 pymongo>=4.0.0
 certifi>=2022.12.7
-=======
->>>>>>> c84ff9406b51f4b0c14b6a058c7379b69e24d5ae
